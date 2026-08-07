@@ -32,11 +32,13 @@ const randInt = (min, max) => Math.floor(rand(min, max + 1));
 // ── Skins ──────────────────────────────────────────────────────────────────────
 const SKINS = [
   { name: 'CLASICA', stroke: '#fff', thrust: 'rgba(255,130,0,0.85)',
-    verts: [[20,0],[-12,-9],[-7,0],[-12,9]] },
+    verts: [[20,0],[-12,-9],[-7,0],[-12,9]], scale: 1, pointsMultiplier: 1 },
   { name: 'FLECHA', stroke: '#00e5ff', thrust: 'rgba(0,229,255,0.85)',
-    verts: [[22,0],[-8,-12],[-4,-4],[-10,0],[-4,4],[-8,12]] },
+    verts: [[22,0],[-8,-12],[-4,-4],[-10,0],[-4,4],[-8,12]], scale: 1, pointsMultiplier: 1 },
   { name: 'STEALTH', stroke: '#ff4444', thrust: 'rgba(255,80,0,0.85)',
-    verts: [[18,0],[4,-10],[-14,-7],[-8,0],[-14,7],[4,10]] },
+    verts: [[18,0],[4,-10],[-14,-7],[-8,0],[-14,7],[4,10]], scale: 1, pointsMultiplier: 1 },
+  { name: 'TITAN', stroke: '#9b59b6', thrust: 'rgba(155,89,182,0.85)',
+    verts: [[20,0],[-12,-9],[-7,0],[-12,9]], scale: 2, pointsMultiplier: 2 },
 ];
 let currentSkin = 0;
 let skinFlashTimer = 0;
@@ -206,6 +208,8 @@ class Ship {
 
   update(dt) {
     if (this.dead) return;
+    const skinScale = SKINS[currentSkin].scale || 1;
+    this.radius = 12 * skinScale;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.speedBoostTimer > 0) this.speedBoostTimer -= dt;
@@ -235,7 +239,8 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
+    const skinScale = SKINS[currentSkin].scale || 1;
+    const NOSE = 21 * skinScale;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     if (this.tripleShotTimer > 0) {
@@ -254,12 +259,13 @@ class Ship {
     if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) return;
 
     const skin = SKINS[currentSkin];
+    const skinScale = skin.scale || 1;
 
     // Estela durante boost de velocidad
     if (this.speedBoostTimer > 0 && this.thrusting) {
       for (let i = 0; i < 2; i++) {
-        const ox = this.x - Math.cos(this.angle) * 14 + rand(-3, 3);
-        const oy = this.y - Math.sin(this.angle) * 14 + rand(-3, 3);
+        const ox = this.x - Math.cos(this.angle) * 14 * skinScale + rand(-3, 3);
+        const oy = this.y - Math.sin(this.angle) * 14 * skinScale + rand(-3, 3);
         const a = this.angle + Math.PI + rand(-0.4, 0.4);
         const speed = rand(80, 160);
         const p = new Particle(ox, oy);
@@ -284,6 +290,7 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
+    ctx.scale(skinScale, skinScale);
     ctx.strokeStyle = skin.stroke;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
@@ -529,12 +536,13 @@ function update(dt) {
 
   // Bala vs asteroide
   const newAsteroids = [];
+  const ptsMul = SKINS[currentSkin].pointsMultiplier || 1;
   for (const b of bullets) {
     for (const a of asteroids) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+        score += (a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size]) * ptsMul;
         explode(a.x, a.y, a.isShootingStar ? 15 : a.size * 5);
         newAsteroids.push(...a.split());
         // Drop de power-up con 20% de probabilidad (solo tamaño 2 o 3)
@@ -556,7 +564,7 @@ function update(dt) {
     for (const a of asteroids) {
       if (!a.dead && dist(ship, a) < SHIELD_RADIUS + a.radius * 0.82) {
         a.dead = true;
-        score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+        score += (a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size]) * ptsMul;
         explode(a.x, a.y, a.isShootingStar ? 15 : a.size * 5);
         shieldAsteroids.push(...a.split());
       }
@@ -598,10 +606,11 @@ function update(dt) {
 // ── Draw ──────────────────────────────────────────────────────────────────────
 function drawLifeIcon(x, y) {
   const skin = SKINS[currentSkin];
+  const s = 0.55 / (skin.scale || 1);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.scale(0.55, 0.55);
+  ctx.scale(s, s);
   ctx.strokeStyle = skin.stroke;
   ctx.lineWidth   = 1.2;
   ctx.lineJoin    = 'round';
@@ -626,7 +635,8 @@ function drawHUD() {
   ctx.textAlign = 'left';
   ctx.font = '11px monospace';
   ctx.fillStyle = skin.stroke;
-  ctx.fillText(skin.name, 14, 42);
+  const label = skin.pointsMultiplier > 1 ? `${skin.name}  x${skin.pointsMultiplier} PTS` : skin.name;
+  ctx.fillText(label, 14, 42);
   ctx.font = '15px monospace';
 
   ctx.textAlign = 'center';
@@ -688,7 +698,8 @@ function draw() {
     ctx.textAlign = 'center';
     ctx.font = 'bold 28px monospace';
     ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
-    ctx.fillText(`SKIN: ${skin.name}`, W / 2, H / 2);
+    const flashLabel = skin.pointsMultiplier > 1 ? `SKIN: ${skin.name} (x${skin.pointsMultiplier} PTS)` : `SKIN: ${skin.name}`;
+    ctx.fillText(flashLabel, W / 2, H / 2);
     ctx.font = '15px monospace';
   }
 
