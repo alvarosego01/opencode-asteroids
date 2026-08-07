@@ -12,7 +12,7 @@ const justPressed = {};
 window.addEventListener('keydown', e => {
   justPressed[e.code] = !keys[e.code];
   keys[e.code] = true;
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code))
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code))
     e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -28,6 +28,18 @@ const wrap  = (v, max) => ((v % max) + max) % max;
 const dist  = (a, b)   => Math.hypot(a.x - b.x, a.y - b.y);
 const rand  = (min, max) => min + Math.random() * (max - min);
 const randInt = (min, max) => Math.floor(rand(min, max + 1));
+
+// ── Skins ──────────────────────────────────────────────────────────────────────
+const SKINS = [
+  { name: 'CLASICA', stroke: '#fff', thrust: 'rgba(255,130,0,0.85)',
+    verts: [[20,0],[-12,-9],[-7,0],[-12,9]] },
+  { name: 'FLECHA', stroke: '#00e5ff', thrust: 'rgba(0,229,255,0.85)',
+    verts: [[22,0],[-8,-12],[-4,-4],[-10,0],[-4,4],[-8,12]] },
+  { name: 'STEALTH', stroke: '#ff4444', thrust: 'rgba(255,80,0,0.85)',
+    verts: [[18,0],[4,-10],[-14,-7],[-8,0],[-14,7],[4,10]] },
+];
+let currentSkin = 0;
+let skinFlashTimer = 0;
 
 // ── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet {
@@ -230,6 +242,8 @@ class Ship {
     // Parpadeo durante invencibilidad de reaparición
     if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) return;
 
+    const skin = SKINS[currentSkin];
+
     // Estela durante boost de velocidad
     if (this.speedBoostTimer > 0 && this.thrusting) {
       for (let i = 0; i < 2; i++) {
@@ -242,9 +256,10 @@ class Ship {
         p.vy = Math.sin(a) * speed + this.vy * 0.3;
         p.life = 0.3;
         p.ttl = 0.3;
+        const sc = skin.stroke;
         p.draw = function() {
           const alpha = this.ttl / this.life;
-          ctx.strokeStyle = `rgba(0, 229, 255, ${alpha.toFixed(2)})`;
+          ctx.strokeStyle = `rgba(${parseInt(sc.slice(1,3),16)},${parseInt(sc.slice(3,5),16)},${parseInt(sc.slice(5,7),16)},${alpha.toFixed(2)})`;
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.moveTo(this.x, this.y);
@@ -258,16 +273,15 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ctx.strokeStyle = '#fff';
+    ctx.strokeStyle = skin.stroke;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
-    // Silueta clásica: triángulo con muesca trasera
     ctx.beginPath();
-    ctx.moveTo( 20,  0);   // nariz
-    ctx.lineTo(-12, -9);   // ala izquierda
-    ctx.lineTo( -7,  0);   // muesca trasera
-    ctx.lineTo(-12,  9);   // ala derecha
+    for (let i = 0; i < skin.verts.length; i++) {
+      if (i === 0) ctx.moveTo(skin.verts[i][0], skin.verts[i][1]);
+      else ctx.lineTo(skin.verts[i][0], skin.verts[i][1]);
+    }
     ctx.closePath();
     ctx.stroke();
 
@@ -277,7 +291,7 @@ class Ship {
       ctx.moveTo(-8, -4);
       ctx.lineTo(-8 - rand(6, 14), 0);
       ctx.lineTo(-8,  4);
-      ctx.strokeStyle = 'rgba(255, 130, 0, 0.85)';
+      ctx.strokeStyle = skin.thrust;
       ctx.stroke();
     }
 
@@ -434,6 +448,8 @@ function killShip() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
+  if (skinFlashTimer > 0) skinFlashTimer -= dt;
+
   if (state === 'gameover') {
     if (pressed('Space')) initGame();
     particles.forEach(p => p.update(dt));
@@ -453,6 +469,11 @@ function update(dt) {
   // Disparar
   if (pressed('Space')) {
     bullets.push(...ship.tryShoot());
+  }
+
+  if (pressed('Tab')) {
+    currentSkin = (currentSkin + 1) % SKINS.length;
+    skinFlashTimer = 1.5;
   }
 
   ship.update(dt);
@@ -510,17 +531,19 @@ function update(dt) {
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
 function drawLifeIcon(x, y) {
+  const skin = SKINS[currentSkin];
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.strokeStyle = '#fff';
+  ctx.scale(0.55, 0.55);
+  ctx.strokeStyle = skin.stroke;
   ctx.lineWidth   = 1.2;
   ctx.lineJoin    = 'round';
   ctx.beginPath();
-  ctx.moveTo( 9,  0);
-  ctx.lineTo(-6, -5);
-  ctx.lineTo(-3,  0);
-  ctx.lineTo(-6,  5);
+  for (let i = 0; i < skin.verts.length; i++) {
+    if (i === 0) ctx.moveTo(skin.verts[i][0], skin.verts[i][1]);
+    else ctx.lineTo(skin.verts[i][0], skin.verts[i][1]);
+  }
   ctx.closePath();
   ctx.stroke();
   ctx.restore();
@@ -532,6 +555,13 @@ function drawHUD() {
 
   ctx.textAlign = 'left';
   ctx.fillText(`SCORE  ${score}`, 14, 26);
+
+  const skin = SKINS[currentSkin];
+  ctx.textAlign = 'left';
+  ctx.font = '11px monospace';
+  ctx.fillStyle = skin.stroke;
+  ctx.fillText(skin.name, 14, 42);
+  ctx.font = '15px monospace';
 
   ctx.textAlign = 'center';
   ctx.fillText(`NIVEL ${level}`, W / 2, 26);
@@ -568,6 +598,16 @@ function draw() {
   ship.draw();
 
   drawHUD();
+
+  if (skinFlashTimer > 0) {
+    const alpha = Math.min(1, skinFlashTimer / 0.5);
+    const skin = SKINS[currentSkin];
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 28px monospace';
+    ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+    ctx.fillText(`SKIN: ${skin.name}`, W / 2, H / 2);
+    ctx.font = '15px monospace';
+  }
 
   if (state === 'gameover')
     drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR`);
