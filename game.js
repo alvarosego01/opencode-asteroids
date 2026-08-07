@@ -61,29 +61,44 @@ class Bullet {
 const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
+const SHOOTING_STAR_POINTS = 200;
 
 class Asteroid {
-  constructor(x, y, size = 3) {
+  constructor(x, y, size = 3, isShootingStar = false) {
     this.x    = x;
     this.y    = y;
     this.size = size;
-    this.radius = RADII[size];
     this.dead = false;
+    this.isShootingStar = isShootingStar;
 
     const angle = rand(0, Math.PI * 2);
-    const speed = SPEEDS[size] + rand(-15, 15);
-    this.vx = Math.cos(angle) * speed;
-    this.vy = Math.sin(angle) * speed;
-    this.rotSpeed = rand(-1.2, 1.2);
-    this.rot = rand(0, Math.PI * 2);
 
-    // Polígono irregular
-    const n = randInt(8, 13);
-    this.verts = [];
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const r = this.radius * rand(0.6, 1.0);
-      this.verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    if (isShootingStar) {
+      this.radius = 15;
+      const speed = rand(100, 130);
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+      this.rotSpeed = rand(2.0, 3.5);
+      this.rot = rand(0, Math.PI * 2);
+      this.ttl = 6;
+      this.maxTtl = 6;
+      this.verts = [];
+      this.trail = [];
+    } else {
+      this.radius = RADII[size];
+      const speed = SPEEDS[size] + rand(-15, 15);
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+      this.rotSpeed = rand(-1.2, 1.2);
+      this.rot = rand(0, Math.PI * 2);
+
+      const n = randInt(8, 13);
+      this.verts = [];
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const r = this.radius * rand(0.6, 1.0);
+        this.verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
     }
   }
 
@@ -91,10 +106,17 @@ class Asteroid {
     this.x   = wrap(this.x + this.vx * dt, W);
     this.y   = wrap(this.y + this.vy * dt, H);
     this.rot += this.rotSpeed * dt;
+
+    if (this.isShootingStar) {
+      this.ttl -= dt;
+      if (this.ttl <= 0) this.dead = true;
+      this.trail.push({ x: this.x, y: this.y, ttl: 0.4 });
+      this.trail = this.trail.filter(t => { t.ttl -= dt; return t.ttl > 0; });
+    }
   }
 
   split() {
-    if (this.size <= 1) return [];
+    if (this.isShootingStar || this.size <= 1) return [];
     return [
       new Asteroid(this.x, this.y, this.size - 1),
       new Asteroid(this.x, this.y, this.size - 1),
@@ -102,6 +124,38 @@ class Asteroid {
   }
 
   draw() {
+    if (this.isShootingStar) {
+      const alpha = Math.max(0, this.ttl / this.maxTtl);
+
+      for (const t of this.trail) {
+        const ta = (t.ttl / 0.4) * alpha;
+        ctx.fillStyle = `rgba(255, 170, 0, ${ta.toFixed(2)})`;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, this.radius * 0.4 * ta, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rot);
+      ctx.fillStyle = '#ffd700';
+      ctx.strokeStyle = '#fff8b0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const r = i % 2 === 0 ? this.radius : this.radius * 0.35;
+        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
@@ -326,6 +380,18 @@ function spawnAsteroids(count) {
   }
 }
 
+function maybeSpawnShootingStar() {
+  if (Math.random() < 0.7) {
+    const SAFE_DIST = 130;
+    let x, y;
+    do {
+      x = rand(0, W);
+      y = rand(0, H);
+    } while (Math.hypot(x - W / 2, y - H / 2) < SAFE_DIST);
+    asteroids.push(new Asteroid(x, y, 2, true));
+  }
+}
+
 function initGame() {
   ship          = new Ship();
   bullets   = [];
@@ -337,6 +403,7 @@ function initGame() {
   level  = 1;
   state  = 'playing';
   spawnAsteroids(4);
+  maybeSpawnShootingStar();
 }
 
 function nextLevel() {
@@ -346,6 +413,7 @@ function nextLevel() {
   powerUps  = [];
   ship.reset();
   spawnAsteroids(3 + level);
+  maybeSpawnShootingStar();
 }
 
 function explode(x, y, count = 8) {
@@ -404,8 +472,8 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += POINTS[a.size];
-        explode(a.x, a.y, a.size * 5);
+        score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+        explode(a.x, a.y, a.isShootingStar ? 15 : a.size * 5);
         newAsteroids.push(...a.split());
         // Drop de power-up con 20% de probabilidad (solo tamaño 2 o 3)
         if (a.size >= 2 && Math.random() < 0.2) {
@@ -437,7 +505,7 @@ function update(dt) {
   }
 
   // Nivel completado
-  if (asteroids.length === 0) nextLevel();
+  if (asteroids.filter(a => !a.isShootingStar).length === 0) nextLevel();
 }
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
